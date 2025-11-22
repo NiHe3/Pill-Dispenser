@@ -42,6 +42,13 @@ typedef struct {
     int32_t data; // BUTTON: 1 = press, 0 = release;
 } event_t;
 
+// State machine for dispenser logic
+typedef enum {
+    STATE_WAITING,     // Blinking LED, waiting for calibration
+    STATE_CALIBRATING, // Transient state in the main loop
+    STATE_READY,       // Waiting to start dispense
+    STATE_DISPENSING   // Dispensing every 30 seconds
+} dispenser_state_t;
 
 // Half-step sequence: A, AB, B, BC, C, CD, D, DA
 const uint8_t sequence[8][4] = {
