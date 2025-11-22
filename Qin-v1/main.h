@@ -15,7 +15,7 @@
 #define BUTTONS_SIZE 3
 
 #define LED_D1 22 // right LED
-#define LEDS_SIZE 1
+#define LED_SIZE 1
 
 // Stepper motor control pins
 #define IN1 2
@@ -41,9 +41,10 @@ const uint8_t sequence[8][4] = {
     {1, 0, 0, 1}
 };
 
-void blink_led (uint pin, int times, int delay_ms);
-void buttons_initialisation(const uint *buttons);
+
+void init_buttons(const uint *buttons);
 void leds_initialisation(const uint *leds);
+void blink_led (uint led_pin, uint button_pin, int delay_ms);
 void set_brightness(const uint *leds, uint brightness);
 uint clamp_to_wrap(int bright_value);
 
