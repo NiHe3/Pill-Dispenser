@@ -2,6 +2,7 @@
 #include <stdbool.h>
 #include "pico/stdlib.h"
 #include "hardware/pwm.h"
+#include "hardware/timer.h"
 #include <string.h>
 #include <ctype.h>
 #include <stdlib.h>
@@ -11,6 +12,14 @@
 
 // Global event queue used by ISR (Interrupt Service Routine) and main loop
 static queue_t events;
+static st_dispenser current_st = STATE_WAITING;
+static struct repeating_timer blink_timer;
+static struct repeating_timer dispense_timer;
+
+// Make coils, leds, and steps global so callbacks can access them
+static const uint g_coil_pins[] = {IN1, IN2, IN3, IN4};
+static const uint g_leds[] = {LED_D1};
+static int g_steps_per_rev = 4096; // Default, will be updated by calibration
 
 int main() {
     const uint buttons[] = {SW_1, SW_0, SW_2};
@@ -44,10 +53,10 @@ int main() {
             if (event.type == EVENT_SW_1 && event.data) {
                 // Turn lights on
                 if (!led_on) {
-                    led_on = blink_led(LED_D1, SW_1, true);
+                    led_on = start_blink_led(LED_D1, SW_1, true);
                 }
                 else {
-                    led_on = blink_led(LED_D1, SW_1, false);
+                    led_on = start_blink_led(LED_D1, SW_1, false);
                 }
 
             }

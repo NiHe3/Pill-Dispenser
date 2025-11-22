@@ -50,7 +50,7 @@ typedef enum {
     STATE_CALIBRATING, // Transient state in the main loop
     STATE_READY,       // Waiting to start dispense
     STATE_DISPENSING   // Dispensing every 30 seconds
-} dispenser_state_t;
+} st_dispenser;
 
 // Half-step sequence: A, AB, B, BC, C, CD, D, DA
 const uint8_t sequence[8][4] = {
