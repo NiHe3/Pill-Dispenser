@@ -119,3 +119,59 @@ void ini_sensor() {
     // Internal pull-up: SENSOR reads HIGH (1) when not blocked, LOW (0) when blocked
     gpio_pull_up(SENSOR_PIN);
 }
+int do_calibration(const uint *coil_pins, const uint8_t sequence[8][4], const int max, int revolution_steps[3]) {
+    int count = 0; // Number of falling edges detected
+    int step = 0; // total half-steps taken
+    int edge_step = 0; // Steps between consecutive edges (starts after first edge)
+    bool first_edge_found = false;
+    bool continue_loop = true;
+    bool prev_state = gpio_get(SENSOR_PIN); // true = no obstacle, false = obstacle
+
+    do {
+        // Advance the motor by one half-step
+        step_motor(coil_pins, 1, sequence);
+        sleep_ms(STEP_DELAY_MS); // Time delay between steps (motor speed control)
+        step++;
+
+        // Start counting steps between edges after the first edge has been found
+        if (first_edge_found)
+            edge_step++;
+
+        const bool sensor_state = gpio_get(SENSOR_PIN);
+
+        // Detect falling edge: HIGH -> LOW transition (no obstacle -> obstacle)
+        if (prev_state && !sensor_state) {
+            if (!first_edge_found) {
+                // First falling edge - start counting after this point
+                printf("First low edge found. Starting revolution tracking...\r\n");
+                first_edge_found = true;
+            }
+            else {
+                // Store number of steps between consecutive edges
+                revolution_steps[count-1] = edge_step;
+                printf("Revolution %d steps: %d\r\n", count, edge_step);
+                edge_step = 0; // Reset counter for the next interval
+            }
+            count++;
+        }
+        // Stop after 4 falling edges (3 intervals) or reaching safety limit
+        if (count >= 4 || step > max)
+            continue_loop = false;
+
+        prev_state = sensor_state;
+
+    } while (continue_loop);
+
+    return 0; // Calibration failed
+}
+
+void step_motor(const uint *coil_pins, const int step, const uint8_t sequence[8][4]) {
+    // Phase preserves the motor's current position (0-7) across function calls
+    static int phase = 0;
+    phase = (phase + step) & 7;
+
+    // Set GPIO pins according to the new phase in the half-step sequence
+    for (int i = 0; i < INS_SIZE; i++) {
+        gpio_put(coil_pins[i], sequence[phase][i]);
+    }
+}
