@@ -27,6 +27,7 @@
 #define SENSOR_PIN 28 // Optical sensor input with pull-up
 #define SAFE_MAX_STEPS 20480 // Safety limit: 5 * 4096 steps
 #define STEP_DELAY_MS 2
+#define LED_DELAY_MS 5
 
 // Half-step sequence: A, AB, B, BC, C, CD, D, DA
 const uint8_t sequence[8][4] = {
