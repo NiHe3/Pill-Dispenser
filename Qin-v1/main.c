@@ -2,176 +2,337 @@
 #include <stdbool.h>
 #include "pico/stdlib.h"
 #include "hardware/pwm.h"
+#include "hardware/timer.h"
 #include <string.h>
 #include <ctype.h>
 #include <stdlib.h>
 #include "main.h"
 
+#include "pico/util/queue.h"
+
+// --- Global Variables ---
+static queue_t events; // Global event queue
+static st_dispenser current_state = STATE_WAITING;
+static struct repeating_timer blink_timer;
+static struct repeating_timer dispense_timer;
+
+// Make coils, leds, and steps global so callbacks can access them
+static const uint g_coil_pins[] = {IN1, IN2, IN3, IN4};
+static const uint g_leds[] = {LED_D1};
+static int g_steps_per_rev = 4096; // Default, will be updated by calibration
+static int dispensed_count = 0;
+
+// --- Main Application ---
 int main() {
     const uint buttons[] = {SW_1, SW_0, SW_2};
-    const uint leds[] = {LED_D1};
-    const uint coil_pins[] = {IN1, IN2, IN3, IN4};
-    int steps_per_rev = 4096; // Default steps per revolution before calibration
-    int avg = 0;
-    int revolution_steps[3] = {0, 0, 0}; // Array to store step counts between four consecutive edges
+    int revolution_steps[3] = {0, 0, 0}; // Array to store step counts
 
     // Initialise chosen serial port
     stdio_init_all();
-    // Initialise buttons
-    init_buttons(buttons);
-    // Initialise LED pins
-    leds_initialisation(leds);
-    //Initialise stepper motor pins
-    ini_coil_pins(coil_pins);
-    //Initialise optical sensor input
-    ini_sensor();
+    printf("Dispenser starting...\r\n");
 
-    bool led_on = false;
-    bool sw1_pre_state = true; // SW1 is pulled up, so "released" = true
+    // Initialise event queue
+    queue_init(&events, sizeof(event_t), 16);
+
+    // Initialise hardware
+    init_buttons(buttons);
+    leds_initialisation(g_leds);
+    init_coil_pins(g_coil_pins);
+    init_opto();
+
+    // Enable button interrupts (Callbacks will push to the queue)
+    for (int i = 0; i < BUTTONS_SIZE; i++) {
+        gpio_set_irq_enabled_with_callback(buttons[i], GPIO_IRQ_EDGE_FALL, true, &gpio_callback);
+    }
+
+    // Start in the waiting state
+    start_blink(g_leds[0]);
+    printf("State: WAITING. Press SW_1 to calibrate.\r\n");
+
+    event_t event;
 
     while (true) {
-        if (gpio_get(SW_2) == 0) {
-            blink_led(LED_D1, SW_2, LED_DELAY_MS);
+        // Process all pending events from the queue
+        while (queue_try_remove(&events, &event)) {
+
+            // Only handle "press" events (data = 1)
+            if (event.data != 1) continue;
+
+            switch (current_state) {
+
+                case STATE_WAITING:
+                    if (event.type == EVENT_SW_1) {
+                        printf("SW_1 pressed. Starting calibration...\r\n");
+                        current_state = STATE_CALIBRATING; // Set transient state
+                        stop_blink(g_leds[0]);
+
+                        // Run calibration (this is a blocking function)
+                        int avg_steps = do_calibration(g_coil_pins, sequence, SAFE_MAX_STEPS, revolution_steps);
+
+                        if (avg_steps > 0) {
+                            g_steps_per_rev = avg_steps;
+                            printf("Calibration complete. Steps/rev: %d\r\n", g_steps_per_rev);
+                            set_brightness(g_leds[0], WRAP_VALUE); // Solid LED on
+                            current_state = STATE_READY;
+                            printf("State: READY. Press SW_0 to start dispensing.\r\n");
+                        } else {
+                            printf("Calibration failed. Returning to wait state.\r\n");
+                            start_blink(g_leds[0]); // Restart blink
+                            current_state = STATE_WAITING;
+                        }
+                    }
+                    break;
+
+                case STATE_READY:
+                    if (event.type == EVENT_SW_0) {
+                        printf("SW_0 pressed. Starting dispense cycle.\r\n");
+                        current_state = STATE_DISPENSING;
+
+                        // 1. Dispense immediately on button press
+                        dispensed_count = 0;
+                        printf("Dispensing (initial)...\r\n");
+                        run_motor_and_check_pill(g_coil_pins, sequence, g_steps_per_rev / 4); // Assuming 4 compartments
+
+                        // 2. Start 30-second timer for future dispenses
+                        add_repeating_timer_ms(DISPENSE_INTERVAL_MS, dispense_timer_callback, NULL, &dispense_timer);
+                        printf("State: DISPENSING. Press SW_1 to stop.\r\n");
+                    }
+                    break;
+
+                case STATE_DISPENSING:
+                    if (event.type == EVENT_SW_1) {
+                        printf("SW_1 pressed. Stopping dispense cycle.\r\n");
+                        cancel_repeating_timer(&dispense_timer);
+                        set_brightness(g_leds[0], 0); // LED off
+                        current_state = STATE_WAITING;
+                        start_blink(g_leds[0]); // Start waiting blink again
+                        printf("State: WAITING. Press SW_1 to calibrate.\r\n");
+                    }
+                    break;
+
+                case STATE_CALIBRATING:
+                    // Do nothing, wait for calibration to finish
+                    break;
+            }
         }
-        sleep_ms(50); // debounce
+
+        // Allow the processor to sleep when no events are pending
+        sleep_ms(10);
     }
 }
 
+
+// GPIO Interrupt Service Routine
+void gpio_callback(uint gpio, uint32_t event_mask) {
+    // Just create an event and push it to the queue.
+    event_t ev;
+
+    if (gpio == SW_0) {
+        ev.type = EVENT_SW_0;
+    }else if (gpio == SW_1) {
+        ev.type = EVENT_SW_1;
+    }else if (gpio == SW_2) {
+        ev.type = EVENT_SW_2;
+    }else {
+        return;
+    }
+    ev.data = 1; // 1 = pressed (we only care about falling edge)
+
+    // Try to add to queue. If it fails (full), we lose the event.
+    queue_try_add(&events, &ev);
+}
+
+// Timer callback for the "waiting" blink
+bool blink_timer_callback(struct repeating_timer *t) {
+    static bool led_state = false;
+    led_state = !led_state;
+    set_brightness(g_leds[0], led_state ? WRAP_VALUE : 0);
+    return true; // Keep repeating
+}
+
+// Timer callback for dispensing
+bool dispense_timer_callback(struct repeating_timer *t) {
+    printf("Dispensing (30s timer)...\r\n");
+    // Run motor 1/4 turn (assuming 4 compartments from calibration)
+    run_motor_and_check_pill(g_coil_pins, sequence, g_steps_per_rev / 4);
+    return true; // Keep repeating
+}
+
+// --- Hardware Initialization ---
+
 void init_buttons(const uint *buttons) {
     for (int i = 0; i < BUTTONS_SIZE; i++) {
-        gpio_init(buttons[i]); // Enable the GPIO pin
-        gpio_set_dir(buttons[i], GPIO_IN); // Set the pin as input
-        gpio_pull_up(buttons[i]); // High ->1, released, LOW -> 0, pressed
+        gpio_init(buttons[i]);
+        gpio_set_dir(buttons[i], GPIO_IN);
+        gpio_pull_up(buttons[i]);
     }
 }
 
 void leds_initialisation(const uint *leds) {
-    // array to track if a slice has already been initialised
     bool slice_ini[8] = {false};
-
-    // Get default PWM configuration
     pwm_config config = pwm_get_default_config();
-    // Set clock divider (125 for 1MHz clock)
     pwm_config_set_clkdiv_int(&config, CLK_DIV);
-    // Set wrap for 1KHz frequency
     pwm_config_set_wrap(&config, WRAP_VALUE);
 
     for (int i = 0; i < LED_SIZE; i++) {
-        // Get slice and channel your GPIO pin
         const uint slice = pwm_gpio_to_slice_num(leds[i]);
         const uint chan = pwm_gpio_to_channel(leds[i]);
 
-        // Stop PWM
-        pwm_set_enabled(leds[i], false);
+        pwm_set_enabled(slice, false); // Use slice, not pin
 
-        // Initialize each slice once
         if (!slice_ini[slice]) {
-            // Start set to true
             pwm_init(slice, &config, true);
             slice_ini[slice] = true;
         }
 
-        // Set level to (CC) -> duty cycle
         pwm_set_chan_level(slice, chan, 0);
-        // Select PWM model for your pin
         gpio_set_function(leds[i], GPIO_FUNC_PWM);
-        // Start PWM
         pwm_set_enabled(slice, true);
     }
 }
 
-// Function to blink LED
-void blink_led (uint led_pin, uint button_pin, int delay_ms) {
-while (gpio_get(button_pin) == 0){ // sw_2 pressed
+// --- LED Control Functions (PWM) ---
 
-        gpio_put(led_pin, 1); // LED on
-        sleep_ms(delay_ms);
-        gpio_put(led_pin, 0); // LED off
-        sleep_ms(delay_ms);
-    }
+// Sets LED brightness using PWM
+void set_brightness(const uint led_pin, uint brightness) {
+    const uint slice = pwm_gpio_to_slice_num(led_pin);
+    const uint chan = pwm_gpio_to_channel(led_pin);
+    pwm_set_chan_level(slice, chan, clamp_to_wrap(brightness));
 }
+
+// Starts the non-blocking waiting blink
+void start_blink(const uint led_pin) {
+    // Ensure LED is off to start
+    set_brightness(led_pin, 0);
+    add_repeating_timer_ms(BLINK_INTERVAL_MS, blink_timer_callback, NULL, &blink_timer);
+}
+
+// Stops the non-blocking waiting blink
+void stop_blink(const uint led_pin) {
+    cancel_repeating_timer(&blink_timer);
+    // Ensure LED is left in the OFF state
+    set_brightness(led_pin, 0);
+}
+
 
 // Ensures the brightness value stays within 0 - WRAP_VALUE
 uint clamp_to_wrap(const int bright_value) {
     if (bright_value < 0) {
         return 0;
     }
-
     if (bright_value > WRAP_VALUE) {
         return WRAP_VALUE;
     }
     return bright_value;
 }
 
-void ini_coil_pins(const uint *coil_pins) {
-    // Initialize all coil pins as outputs and set them LOW at startup
+// --- Motor and Sensor Functions ---
+
+void init_coil_pins(const uint *coil_pins) {
     for (int i = 0; i < INS_SIZE; i++) {
         gpio_init(coil_pins[i]);
         gpio_set_dir(coil_pins[i], GPIO_OUT);
-        gpio_put(coil_pins[i], 0); // Ensure coils are off at startup
+        gpio_put(coil_pins[i], 0);
     }
 }
 
-void ini_sensor() {
-    // Initialize the optical sensor input with internal pull-up resistor
-    gpio_init(SENSOR_PIN);
-    gpio_set_dir(SENSOR_PIN, GPIO_IN);
-    // Internal pull-up: SENSOR reads HIGH (1) when not blocked, LOW (0) when blocked
-    gpio_pull_up(SENSOR_PIN);
+void init_opto() {
+    gpio_init(OPTO_PIN);
+    gpio_set_dir(OPTO_PIN, GPIO_IN);
+    gpio_pull_up(OPTO_PIN);
 }
+
+// Calibrates and returns average steps per revolution
 int do_calibration(const uint *coil_pins, const uint8_t sequence[8][4], const int max, int revolution_steps[3]) {
-    int count = 0; // Number of falling edges detected
-    int step = 0; // total half-steps taken
-    int edge_step = 0; // Steps between consecutive edges (starts after first edge)
+    int count = 0;
+    int step = 0;
+    int edge_step = 0;
     bool first_edge_found = false;
     bool continue_loop = true;
-    bool prev_state = gpio_get(SENSOR_PIN); // true = no obstacle, false = obstacle
+    bool prev_state = gpio_get(OPTO_PIN);
+
+    printf("Calibration running... turning motor to find 4 edges.\r\n");
 
     do {
-        // Advance the motor by one half-step
-        step_motor(coil_pins, 1, sequence);
-        sleep_ms(STEP_DELAY_MS); // Time delay between steps (motor speed control)
+        step_motor(coil_pins, 1, sequence); // Always step forward
+        sleep_ms(STEP_DELAY_MS);
         step++;
 
-        // Start counting steps between edges after the first edge has been found
-        if (first_edge_found)
+        if (first_edge_found) {
             edge_step++;
+        }
 
-        const bool sensor_state = gpio_get(SENSOR_PIN);
+        const bool sensor_state = gpio_get(OPTO_PIN);
 
-        // Detect falling edge: HIGH -> LOW transition (no obstacle -> obstacle)
+        // Detect falling edge: HIGH -> LOW transition
         if (prev_state && !sensor_state) {
+            count++; // Increment edge count
             if (!first_edge_found) {
-                // First falling edge - start counting after this point
-                printf("First low edge found. Starting revolution tracking...\r\n");
+                printf("First edge found. Starting revolution tracking...\r\n");
                 first_edge_found = true;
-            }
-            else {
-                // Store number of steps between consecutive edges
-                revolution_steps[count-1] = edge_step;
-                printf("Revolution %d steps: %d\r\n", count, edge_step);
+            } else {
+                revolution_steps[count - 2] = edge_step; // Store steps for the interval
+                printf("Edge %d found. Steps since last edge: %d\r\n", count, edge_step);
                 edge_step = 0; // Reset counter for the next interval
             }
-            count++;
         }
-        // Stop after 4 falling edges (3 intervals) or reaching safety limit
-        if (count >= 4 || step > max)
+
+        // Stop after 4 falling edges (which gives 3 intervals)
+        if (count >= 4) {
             continue_loop = false;
+            printf("Fourth edge found. Stopping motor aligned.\r\n");
+        }
+
+        // Safety break
+        if (step > max) {
+            printf("ERROR: Max steps reached during calibration.\r\n");
+            continue_loop = false;
+        }
 
         prev_state = sensor_state;
 
     } while (continue_loop);
 
+    // Check if calibration was successful
+    if (count >= 4) {
+        // Calculate average of the 3 intervals
+        int total = revolution_steps[0] + revolution_steps[1] + revolution_steps[2];
+        return total / 3;
+    }
+
     return 0; // Calibration failed
 }
 
+// Performs one half-step of the stepper motor
 void step_motor(const uint *coil_pins, const int step, const uint8_t sequence[8][4]) {
-    // Phase preserves the motor's current position (0-7) across function calls
     static int phase = 0;
-    phase = (phase + step) & 7;
+    phase = (phase + step) & 7; // & 7 is a fast way to do (phase % 8)
 
-    // Set GPIO pins according to the new phase in the half-step sequence
     for (int i = 0; i < INS_SIZE; i++) {
         gpio_put(coil_pins[i], sequence[phase][i]);
+    }
+}
+
+// Runs the motor for a specific number of steps
+void run_motor_and_check_pill(const uint *coil_pins, const uint8_t sequence[8][4], int steps_to_move) {
+    int direction = (steps_to_move > 0) ? 1 : -1;
+    int steps_abs = (steps_to_move > 0) ? steps_to_move : -steps_to_move;
+
+    printf("Moving motor %d steps...\r\n", steps_to_move);
+
+    for (int i = 0; i < steps_abs; i++) {
+        step_motor(coil_pins, direction, sequence);
+        sleep_ms(STEP_DELAY_MS);
+    }
+    printf("Motor move complete.\r\n");
+}
+
+// Blink n times
+void blink_n_times(const uint led_pin, int n, int interval_ms) {
+    for (int i = 0; i < n; i++) {
+        set_brightness(led_pin, WRAP_VALUE);
+        sleep_ms(interval_ms);
+        set_brightness(led_pin, 0);
+        sleep_ms(interval_ms);
     }
 }
