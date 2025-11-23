@@ -79,6 +79,7 @@ void leds_initialisation(const uint *leds);
 void set_brightness(const uint led_pin, uint brightness);
 void start_blink(const uint led_pin);
 void stop_blink(const uint led_pin);
+void blink_n_times(const uint led_pin, int n, int interval_ms);
 
 uint clamp_to_wrap(int bright_value);
 
