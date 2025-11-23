@@ -38,7 +38,7 @@ int main() {
     init_buttons(buttons);
     leds_initialisation(g_leds);
     init_coil_pins(g_coil_pins);
-    init_sensor();
+    init_opto();
 
     // Enable button interrupts (Callbacks will push to the queue)
     for (int i = 0; i < BUTTONS_SIZE; i++) {
@@ -236,10 +236,10 @@ void init_coil_pins(const uint *coil_pins) {
     }
 }
 
-void init_sensor() {
-    gpio_init(SENSOR_PIN);
-    gpio_set_dir(SENSOR_PIN, GPIO_IN);
-    gpio_pull_up(SENSOR_PIN);
+void init_opto() {
+    gpio_init(OPTO_PIN);
+    gpio_set_dir(OPTO_PIN, GPIO_IN);
+    gpio_pull_up(OPTO_PIN);
 }
 
 // Calibrates and returns average steps per revolution
@@ -249,7 +249,7 @@ int do_calibration(const uint *coil_pins, const uint8_t sequence[8][4], const in
     int edge_step = 0;
     bool first_edge_found = false;
     bool continue_loop = true;
-    bool prev_state = gpio_get(SENSOR_PIN);
+    bool prev_state = gpio_get(OPTO_PIN);
 
     printf("Calibration running... turning motor to find 4 edges.\r\n");
 
@@ -262,7 +262,7 @@ int do_calibration(const uint *coil_pins, const uint8_t sequence[8][4], const in
             edge_step++;
         }
 
-        const bool sensor_state = gpio_get(SENSOR_PIN);
+        const bool sensor_state = gpio_get(OPTO_PIN);
 
         // Detect falling edge: HIGH -> LOW transition
         if (prev_state && !sensor_state) {

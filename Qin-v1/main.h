@@ -84,7 +84,7 @@ void blink_n_times(const uint led_pin, int n, int interval_ms);
 uint clamp_to_wrap(int bright_value);
 
 void init_coil_pins(const uint *coil_pins); // Initialize motor coil output pins
-void init_sensor(); // Initialize optical sensor input
+void init_opto(); // Initialize optical fork input
 
 // Corrected prototype: returns avg steps
 int do_calibration(const uint *coil_pins, const uint8_t sequence[8][4], int max, int revolution_steps[3]);
