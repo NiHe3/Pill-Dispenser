@@ -326,3 +326,13 @@ void run_motor_and_check_pill(const uint *coil_pins, const uint8_t sequence[8][4
     }
     printf("Motor move complete.\r\n");
 }
+
+// Blink n times
+void blink_n_times(const uint led_pin, int n, int interval_ms) {
+    for (int i = 0; i < n; i++) {
+        set_brightness(led_pin, WRAP_VALUE);
+        sleep_ms(interval_ms);
+        set_brightness(led_pin, 0);
+        sleep_ms(interval_ms);
+    }
+}
