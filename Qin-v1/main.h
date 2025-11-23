@@ -27,7 +27,8 @@
 #define IN4 13
 #define INS_SIZE 4
 
-#define SENSOR_PIN 28 // Optical sensor input with pull-up
+#define OPTO_PIN 28 // Optical fork input with pull-up
+#define PIEZO_PIN 27 // Piezo sensor input with pull-up
 #define SAFE_MAX_STEPS 20480 // Safety limit: 5 * 4096 steps
 #define STEP_DELAY_MS 2
 #define LED_DELAY_MS 5 // No longer used, but kept define
