@@ -12,9 +12,9 @@
 #define WRAP_VALUE 999
 #define PWM_MAX 1000
 
-#define SW_1 8 // middle button - Power off/on
+#define SW_1 8 // middle button - Power off/on the dispenser
 #define SW_0 9 // left button - dispense pills
-#define SW_2 7 // right button - (Currently unused by main logic)
+#define SW_2 7 // right button - Starts the motor, calibration, LED
 #define BUTTONS_SIZE 3
 
 #define LED_D1 22 // right LED

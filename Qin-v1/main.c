@@ -22,6 +22,10 @@ static const uint g_leds[] = {LED_D1};
 static int g_steps_per_rev = 4096; // Default, will be updated by calibration
 static int dispensed_count = 0;
 
+// Blink timer guards
+static bool waiting_blink_running = false;
+static bool dispense_timer_active = false;
+
 // --- Main Application ---
 int main() {
     const uint buttons[] = {SW_1, SW_0, SW_2};
@@ -91,10 +95,15 @@ int main() {
                         // 1. Dispense immediately on button press
                         dispensed_count = 0;
                         printf("Dispensing (initial)...\r\n");
-                        run_motor_and_check_pill(g_coil_pins, sequence, g_steps_per_rev / 4); // Assuming 4 compartments
+                        run_motor_and_check_pill(g_coil_pins, sequence, g_steps_per_rev / 7); // 7 compartments
 
                         // 2. Start 30-second timer for future dispenses
-                        add_repeating_timer_ms(DISPENSE_INTERVAL_MS, dispense_timer_callback, NULL, &dispense_timer);
+                        if (add_repeating_timer_ms(DISPENSE_INTERVAL_MS, dispense_timer_callback, NULL, &dispense_timer)) {
+                            dispense_timer_active = true;
+                        } else {
+                            printf("ERROR: failed to start dispense timer.\r\n");
+                            current_state =STATE_READY;
+                        }
                         printf("State: DISPENSING. Press SW_1 to stop.\r\n");
                     }
                     break;
@@ -102,10 +111,17 @@ int main() {
                 case STATE_DISPENSING:
                     if (event.type == EVENT_SW_1) {
                         printf("SW_1 pressed. Stopping dispense cycle.\r\n");
-                        cancel_repeating_timer(&dispense_timer);
+
+                        // ensure no undefined behaviour if SW_1 is pressed before SW_0
+                        if (dispense_timer_active) {
+                            cancel_repeating_timer(&dispense_timer);
+                            dispense_timer_active = false;
+                        }
+
                         set_brightness(g_leds[0], 0); // LED off
                         current_state = STATE_WAITING;
                         start_blink(g_leds[0]); // Start waiting blink again
+                        dispensed_count = 0;
                         printf("State: WAITING. Press SW_1 to calibrate.\r\n");
                     }
                     break;
@@ -115,7 +131,6 @@ int main() {
                     break;
             }
         }
-
         // Allow the processor to sleep when no events are pending
         sleep_ms(10);
     }
@@ -153,10 +168,27 @@ bool blink_timer_callback(struct repeating_timer *t) {
 // Timer callback for dispensing
 bool dispense_timer_callback(struct repeating_timer *t) {
     printf("Dispensing (30s timer)...\r\n");
-    // Run motor 1/4 turn (assuming 4 compartments from calibration)
-    run_motor_and_check_pill(g_coil_pins, sequence, g_steps_per_rev / 4);
+    // Run motor 1/7 turn
+    run_motor_and_check_pill(g_coil_pins, sequence, g_steps_per_rev / 7);
+
+    if (dispensed_count >= 7) {
+        printf("ALl pills dispensed. Stopping cycle.\r\n");
+
+        // stop timer
+        cancel_repeating_timer(t);
+        dispense_timer_active = false;
+
+        // reset state
+        current_state = STATE_WAITING;
+        set_brightness(g_leds[0], 0);
+        start_blink(g_leds[0]); // blink while waiting
+
+        dispensed_count = 0;
+        return false; // stop repeating
+    }
     return true; // Keep repeating
 }
+
 
 // --- Hardware Initialization ---
 
@@ -326,6 +358,17 @@ void run_motor_and_check_pill(const uint *coil_pins, const uint8_t sequence[8][4
     }
     printf("Motor move complete.\r\n");
 }
+
+// Add piezo here
+//     bool pill_deteced = read_piezo_detected(){
+//     if (!pill_deteced) {
+//         printf("No pill detected! Blinking LED 5 times.\r\n");
+//         blink_n_times(g_leds[0], 5, 150); // 5 blinks
+//     } else {
+//         printf("Pill detected.\r\n")
+//     }
+//     dispensed_count++;
+// }
 
 // Blink n times
 void blink_n_times(const uint led_pin, int n, int interval_ms) {
