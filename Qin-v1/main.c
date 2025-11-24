@@ -22,7 +22,6 @@ static const uint g_leds[] = {LED_D1};
 static int g_steps_per_rev = 4096; // Default, will be updated by calibration
 static int dispensed_count = 0;
 
-bool timer_active = false;
 // Blink timer guards
 static bool waiting_blink_running = false;
 static bool dispense_timer_active = false;
@@ -52,7 +51,7 @@ int main() {
 
     // Start in the waiting state
     start_blink(g_leds[0]);
-    printf("State: WAITING. Press SW_2 to calibrate.\r\n");
+    printf("State: WAITING. Press SW_1 to calibrate.\r\n");
 
     event_t event;
 
@@ -123,7 +122,7 @@ int main() {
                         current_state = STATE_WAITING;
                         start_blink(g_leds[0]); // Start waiting blink again
                         dispensed_count = 0;
-                        printf("State: WAITING. Press SW_2 to calibrate.\r\n");
+                        printf("State: WAITING. Press SW_1 to calibrate.\r\n");
                     }
                     break;
 
@@ -359,6 +358,17 @@ void run_motor_and_check_pill(const uint *coil_pins, const uint8_t sequence[8][4
     }
     printf("Motor move complete.\r\n");
 }
+
+// Add piezo here
+//     bool pill_deteced = read_piezo_detected(){
+//     if (!pill_deteced) {
+//         printf("No pill detected! Blinking LED 5 times.\r\n");
+//         blink_n_times(g_leds[0], 5, 150); // 5 blinks
+//     } else {
+//         printf("Pill detected.\r\n")
+//     }
+//     dispensed_count++;
+// }
 
 // Blink n times
 void blink_n_times(const uint led_pin, int n, int interval_ms) {
