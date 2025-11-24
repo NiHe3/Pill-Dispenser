@@ -66,7 +66,7 @@ int main() {
 
                 case STATE_WAITING:
                     if (event.type == EVENT_SW_1) {
-                        printf("SW_2 pressed. Starting calibration...\r\n");
+                        printf("SW_1 pressed. Starting calibration...\r\n");
                         current_state = STATE_CALIBRATING; // Set transient state
                         stop_blink(g_leds[0]);
 
