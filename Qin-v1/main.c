@@ -114,14 +114,15 @@ int main() {
                         printf("SW_1 pressed. Stopping dispense cycle.\r\n");
 
                         // ensure no undefined behaviour if SW_1 is pressed before SW_0
-                        if (timer_active) {
+                        if (dispense_timer_active) {
                             cancel_repeating_timer(&dispense_timer);
-                            timer_active = false;
+                            dispense_timer_active = false;
                         }
 
                         set_brightness(g_leds[0], 0); // LED off
                         current_state = STATE_WAITING;
                         start_blink(g_leds[0]); // Start waiting blink again
+                        dispensed_count = 0;
                         printf("State: WAITING. Press SW_2 to calibrate.\r\n");
                     }
                     break;
