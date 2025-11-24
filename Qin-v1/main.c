@@ -47,7 +47,7 @@ int main() {
 
     // Start in the waiting state
     start_blink(g_leds[0]);
-    printf("State: WAITING. Press SW_1 to calibrate.\r\n");
+    printf("State: WAITING. Press SW_2 to calibrate.\r\n");
 
     event_t event;
 
@@ -61,8 +61,8 @@ int main() {
             switch (current_state) {
 
                 case STATE_WAITING:
-                    if (event.type == EVENT_SW_1) {
-                        printf("SW_1 pressed. Starting calibration...\r\n");
+                    if (event.type == EVENT_SW_2) {
+                        printf("SW_2 pressed. Starting calibration...\r\n");
                         current_state = STATE_CALIBRATING; // Set transient state
                         stop_blink(g_leds[0]);
 
@@ -91,7 +91,7 @@ int main() {
                         // 1. Dispense immediately on button press
                         dispensed_count = 0;
                         printf("Dispensing (initial)...\r\n");
-                        run_motor_and_check_pill(g_coil_pins, sequence, g_steps_per_rev / 4); // Assuming 4 compartments
+                        run_motor_and_check_pill(g_coil_pins, sequence, g_steps_per_rev / 7); // 7 compartments
 
                         // 2. Start 30-second timer for future dispenses
                         add_repeating_timer_ms(DISPENSE_INTERVAL_MS, dispense_timer_callback, NULL, &dispense_timer);
@@ -106,7 +106,7 @@ int main() {
                         set_brightness(g_leds[0], 0); // LED off
                         current_state = STATE_WAITING;
                         start_blink(g_leds[0]); // Start waiting blink again
-                        printf("State: WAITING. Press SW_1 to calibrate.\r\n");
+                        printf("State: WAITING. Press SW_2 to calibrate.\r\n");
                     }
                     break;
 
@@ -152,10 +152,26 @@ bool blink_timer_callback(struct repeating_timer *t) {
 // Timer callback for dispensing
 bool dispense_timer_callback(struct repeating_timer *t) {
     printf("Dispensing (30s timer)...\r\n");
-    // Run motor 1/4 turn (assuming 4 compartments from calibration)
-    run_motor_and_check_pill(g_coil_pins, sequence, g_steps_per_rev / 4);
+    // Run motor 1/7 turn
+    run_motor_and_check_pill(g_coil_pins, sequence, g_steps_per_rev / 7);
+    dispensed_count++;
+    if (dispensed_count >= 7) {
+        printf("ALl pills dispensed. Stopping cycle.\r\n");
+
+        // stop timer
+        cancel_repeating_timer(t);
+
+        // reset state
+        current_state = STATE_WAITING;
+        set_brightness(g_leds[0], 0);
+        start_blink(g_leds[0]); // blink while waiting
+
+        dispensed_count = 0;
+        return false; // stop repeating
+    }
     return true; // Keep repeating
 }
+
 
 // --- Hardware Initialization ---
 
