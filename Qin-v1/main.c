@@ -171,12 +171,13 @@ bool dispense_timer_callback(struct repeating_timer *t) {
     printf("Dispensing (30s timer)...\r\n");
     // Run motor 1/7 turn
     run_motor_and_check_pill(g_coil_pins, sequence, g_steps_per_rev / 7);
-    dispensed_count++;
+
     if (dispensed_count >= 7) {
         printf("ALl pills dispensed. Stopping cycle.\r\n");
 
         // stop timer
         cancel_repeating_timer(t);
+        dispense_timer_active = false;
 
         // reset state
         current_state = STATE_WAITING;
