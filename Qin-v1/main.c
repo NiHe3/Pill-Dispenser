@@ -25,6 +25,7 @@ static int dispensed_count = 0;
 // Blink timer guards
 static bool waiting_blink_running = false;
 static bool dispense_timer_active = false;
+static void enqueue_event(event_type t);
 
 // --- Main Application ---
 int main() {
@@ -60,7 +61,7 @@ int main() {
         while (queue_try_remove(&events, &event)) {
 
             // Only handle "press" events (data = 1)
-            if (event.data != 1) continue;
+            if (event.data != EVENT_DISPENSE_STEP && event.data != 1) continue;
 
             switch (current_state) {
 
@@ -94,6 +95,7 @@ int main() {
 
                         // 1. Dispense immediately on button press
                         dispensed_count = 0;
+                        set_brightness(g_leds[0], 0); // LED off
                         printf("Dispensing (initial)...\r\n");
                         run_motor_and_check_pill(g_coil_pins, sequence, g_steps_per_rev / 7); // 7 compartments
 
@@ -116,13 +118,28 @@ int main() {
                         if (dispense_timer_active) {
                             cancel_repeating_timer(&dispense_timer);
                             dispense_timer_active = false;
+                            set_brightness(g_leds[0], 0); // LED off
                         }
 
-                        set_brightness(g_leds[0], 0); // LED off
                         current_state = STATE_WAITING;
                         start_blink(g_leds[0]); // Start waiting blink again
                         dispensed_count = 0;
                         printf("State: WAITING. Press SW_1 to calibrate.\r\n");
+                    } else if (event.type == EVENT_DISPENSE_STEP) {
+                        printf("Dispense timer event.\r\n");
+                        run_motor_and_check_pill(g_coil_pins, sequence, g_steps_per_rev / 7);
+
+                        if (dispensed_count >= 7) {
+                            printf("All pills dispensed. Stopping cycle.\r\n");
+                            if (dispense_timer_active) {
+                                cancel_repeating_timer(&dispense_timer);
+                                dispense_timer_active = false;
+                            }
+                            current_state = STATE_WAITING;
+                            set_brightness(g_leds[0], 0);
+                            start_blink(g_leds[0]);
+                            dispensed_count = 0;
+                        }
                     }
                     break;
 
@@ -167,25 +184,8 @@ bool blink_timer_callback(struct repeating_timer *t) {
 
 // Timer callback for dispensing
 bool dispense_timer_callback(struct repeating_timer *t) {
-    printf("Dispensing (30s timer)...\r\n");
-    // Run motor 1/7 turn
-    run_motor_and_check_pill(g_coil_pins, sequence, g_steps_per_rev / 7);
-
-    if (dispensed_count >= 7) {
-        printf("ALl pills dispensed. Stopping cycle.\r\n");
-
-        // stop timer
-        cancel_repeating_timer(t);
-        dispense_timer_active = false;
-
-        // reset state
-        current_state = STATE_WAITING;
-        set_brightness(g_leds[0], 0);
-        start_blink(g_leds[0]); // blink while waiting
-
-        dispensed_count = 0;
-        return false; // stop repeating
-    }
+    event_t ev = { .type = EVENT_DISPENSE_STEP, .data = 1};
+    queue_try_add(&events, &ev);
     return true; // Keep repeating
 }
 
