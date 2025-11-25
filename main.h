@@ -11,7 +11,7 @@
 
 #define SW_1 8 // middle button - Power off/on the dispenser, starts the motor, calibration, LED
 #define SW_0 9 // left button - dispense pills
-#define SW_2 7 // right button - Reset motor state
+#define SW_2 7 // right button - unused button
 #define BUTTONS_SIZE 3
 
 #define LED_D1 22 // right LED
