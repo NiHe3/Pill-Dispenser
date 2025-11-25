@@ -30,13 +30,7 @@ static bool dispense_timer_active = false;
 static void enqueue_event(event_type t);
 
 
-bool detect_drop() {
-    //How it should work: pills tak from global, and resets it after each usage case
-   bool pills = pill_dropped;
-    sleep_ms(100);
-    pill_dropped = false;
-    return pills;
-}
+
 // --- Main Application ---
 int main() {
     const uint buttons[] = {SW_1, SW_0, SW_2};
@@ -401,4 +395,11 @@ void blink_n_times(const uint led_pin, int n, int interval_ms) {
         set_brightness(led_pin, 0);
         sleep_ms(interval_ms);
     }
+}
+bool detect_drop() {
+    //How it should work: pills tak from global, and resets it after each usage case
+   bool pills = pill_dropped;
+    sleep_ms(100);
+    pill_dropped = false;
+    return pills;
 }
