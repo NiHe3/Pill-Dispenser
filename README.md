@@ -3,9 +3,9 @@
 (made by Niko, yell at him if something doesn't make sense) 
 
  GOLDEN RULE 
-	When a problem arrives be proactive and inform other group members if they cannot help you fix it talk to the Keijo 
-	If you cannot attend group meeting tell the group  
-	Faster this is done the better 
+	When a problem arrives be proactive and inform other group members if they cannot help you fix it talk to the Keijo. <br>
+	 If you cannot attend group meeting tell the group  
+	 Faster this is done the better 
 
  20.00 status meeting every weekday
 	 - Go through what you've done towards the project 
