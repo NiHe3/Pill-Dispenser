@@ -11,6 +11,8 @@
 #include "pico/util/queue.h"
 
 // --- Global Variables ---
+bool pill_dropped = false; //
+
 static queue_t events; // Global event queue
 static st_dispenser current_state = STATE_WAITING;
 static struct repeating_timer blink_timer;
@@ -27,6 +29,14 @@ static bool waiting_blink_running = false;
 static bool dispense_timer_active = false;
 static void enqueue_event(event_type t);
 
+
+bool detect_drop() {
+    //How it should work: pills tak from global, and resets it after each usage case
+   bool pills = pill_dropped;
+    sleep_ms(100);
+    pill_dropped = false;
+    return pills;
+}
 // --- Main Application ---
 int main() {
     const uint buttons[] = {SW_1, SW_0, SW_2};
@@ -36,6 +46,7 @@ int main() {
     stdio_init_all();
     printf("Dispenser starting...\r\n");
 
+
     // Initialise event queue
     queue_init(&events, sizeof(event_t), 16);
 
@@ -43,6 +54,7 @@ int main() {
     init_buttons(buttons);
     leds_initialisation(g_leds);
     init_coil_pins(g_coil_pins);
+    init_piezo();
     init_opto();
 
     // Enable button interrupts (Callbacks will push to the queue)
@@ -152,11 +164,18 @@ int main() {
         sleep_ms(10);
     }
 }
-
+//main ends here
 
 // GPIO Interrupt Service Routine
 void gpio_callback(uint gpio, uint32_t event_mask) {
+
+    //piezo
+    if (gpio == PIEZO_PIN) {
+        pill_dropped = true;
+        return;
+    }
     // Just create an event and push it to the queue.
+    // Buttons
     event_t ev;
 
     if (gpio == SW_0) {
@@ -267,6 +286,12 @@ void init_coil_pins(const uint *coil_pins) {
         gpio_put(coil_pins[i], 0);
     }
 }
+void init_piezo() {
+    gpio_init(PIEZO_PIN);
+    gpio_set_dir(PIEZO_PIN, GPIO_IN);
+    gpio_pull_up(PIEZO_PIN);
+    gpio_set_irq_enabled_with_callback(PIEZO_PIN, GPIO_IRQ_EDGE_FALL,true,&gpio_callback);
+}
 
 void init_opto() {
     gpio_init(OPTO_PIN);
@@ -357,18 +382,16 @@ void run_motor_and_check_pill(const uint *coil_pins, const uint8_t sequence[8][4
         sleep_ms(STEP_DELAY_MS);
     }
     printf("Motor move complete.\r\n");
+    //piezo remove blinking leds
+    bool pill_detected = detect_drop();
+    if(!pill_detected) {
+        printf("No pill detected! Blinking LED 5 times.\r\n");
+        blink_n_times(g_leds[0], 5, 150); // 5 blinks
+    } else {
+        printf("Pill detected.\r\n");
+    }
+    dispensed_count++;
 }
-
-// Add piezo here
-//     bool pill_deteced = read_piezo_detected(){
-//     if (!pill_deteced) {
-//         printf("No pill detected! Blinking LED 5 times.\r\n");
-//         blink_n_times(g_leds[0], 5, 150); // 5 blinks
-//     } else {
-//         printf("Pill detected.\r\n")
-//     }
-//     dispensed_count++;
-// }
 
 // Blink n times
 void blink_n_times(const uint led_pin, int n, int interval_ms) {

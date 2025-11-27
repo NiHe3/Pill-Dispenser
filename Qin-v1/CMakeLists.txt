@@ -22,9 +22,9 @@ add_compile_options(-Wall
 )
 
 # Tell CMake where to find the executable source file
-add_executable(${PROJECT_NAME} 
-    main.c
+add_executable(${PROJECT_NAME}
         main.h
+        "Project_ver2.c"
 )
 
 # Create map/bin/hex/uf2 files
