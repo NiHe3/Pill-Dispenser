@@ -2,16 +2,14 @@
 #include <stdbool.h>
 #include "pico/stdlib.h"
 #include "hardware/pwm.h"
-#include "hardware/timer.h"
 #include <string.h>
 #include <ctype.h>
 #include <stdlib.h>
 #include "main.h"
 
-#include "pico/util/queue.h"
 
 // --- Global Variables ---
-bool pill_dropped = false; //
+bool pill_dropped = false;
 
 static queue_t events; // Global event queue
 static st_dispenser current_state = STATE_WAITING;
@@ -19,16 +17,14 @@ static struct repeating_timer blink_timer;
 static struct repeating_timer dispense_timer;
 
 // Make coils, leds, and steps global so callbacks can access them
-static const uint g_coil_pins[] = {IN1, IN2, IN3, IN4};
-static const uint g_leds[] = {LED_D1};
-static int g_steps_per_rev = 4096; // Default, will be updated by calibration
+static const uint coil_pins[] = {IN1, IN2, IN3, IN4};
+static const uint leds[] = {LED_D1};
+static int steps_per_rev = 4096; // Default, will be updated by calibration
 static int dispensed_count = 0;
 
 // Blink timer guards
-static bool waiting_blink_running = false;
-static bool dispense_timer_active = false;
-static void enqueue_event(event_type t);
 
+static bool dispense_timer_active = false;
 
 
 // --- Main Application ---
@@ -46,8 +42,8 @@ int main() {
 
     // Initialise hardware
     init_buttons(buttons);
-    leds_initialisation(g_leds);
-    init_coil_pins(g_coil_pins);
+    leds_initialisation(leds);
+    init_coil_pins(coil_pins);
     init_piezo();
     init_opto();
 
@@ -57,7 +53,7 @@ int main() {
     }
 
     // Start in the waiting state
-    start_blink(g_leds[0]);
+    start_blink(leds[0]);
     printf("State: WAITING. Press SW_1 to calibrate.\r\n");
 
     event_t event;
@@ -75,20 +71,22 @@ int main() {
                     if (event.type == EVENT_SW_1) {
                         printf("SW_1 pressed. Starting calibration...\r\n");
                         current_state = STATE_CALIBRATING; // Set transient state
-                        stop_blink(g_leds[0]);
+                        stop_blink(leds[0]);
 
                         // Run calibration (this is a blocking function)
-                        int avg_steps = do_calibration(g_coil_pins, sequence, SAFE_MAX_STEPS, revolution_steps);
+                        int avg_steps = do_calibration(coil_pins, sequence, SAFE_MAX_STEPS, revolution_steps);
 
                         if (avg_steps > 0) {
-                            g_steps_per_rev = avg_steps;
-                            printf("Calibration complete. Steps/rev: %d\r\n", g_steps_per_rev);
-                            set_brightness(g_leds[0], WRAP_VALUE); // Solid LED on
+                            steps_per_rev = avg_steps;
+                            printf("Calibration complete. Steps/rev: %d\r\n", steps_per_rev);
+
+                            align_motor(coil_pins, sequence);
+                            set_brightness(leds[0], WRAP_VALUE); // Solid LED on
                             current_state = STATE_READY;
                             printf("State: READY. Press SW_0 to start dispensing.\r\n");
                         } else {
                             printf("Calibration failed. Returning to wait state.\r\n");
-                            start_blink(g_leds[0]); // Restart blink
+                            start_blink(leds[0]); // Restart blink
                             current_state = STATE_WAITING;
                         }
                     }
@@ -101,9 +99,9 @@ int main() {
 
                         // 1. Dispense immediately on button press
                         dispensed_count = 0;
-                        set_brightness(g_leds[0], 0); // LED off
+                        set_brightness(leds[0], 0); // LED off
                         printf("Dispensing (initial)...\r\n");
-                        run_motor_and_check_pill(g_coil_pins, sequence, g_steps_per_rev / 7); // 7 compartments
+                        run_motor_and_check_pill(coil_pins, sequence, steps_per_rev / 7); // 7 compartments
 
                         // 2. Start 30-second timer for future dispenses
                         if (add_repeating_timer_ms(DISPENSE_INTERVAL_MS, dispense_timer_callback, NULL, &dispense_timer)) {
@@ -124,16 +122,16 @@ int main() {
                         if (dispense_timer_active) {
                             cancel_repeating_timer(&dispense_timer);
                             dispense_timer_active = false;
-                            set_brightness(g_leds[0], 0); // LED off
+                            set_brightness(leds[0], 0); // LED off
                         }
 
                         current_state = STATE_WAITING;
-                        start_blink(g_leds[0]); // Start waiting blink again
+                        start_blink(leds[0]); // Start waiting blink again
                         dispensed_count = 0;
                         printf("State: WAITING. Press SW_1 to calibrate.\r\n");
                     } else if (event.type == EVENT_DISPENSE_STEP) {
                         printf("Dispense timer event.\r\n");
-                        run_motor_and_check_pill(g_coil_pins, sequence, g_steps_per_rev / 7);
+                        run_motor_and_check_pill(coil_pins, sequence, steps_per_rev / 7);
 
                         if (dispensed_count >= 7) {
                             printf("All pills dispensed. Stopping cycle.\r\n");
@@ -142,8 +140,8 @@ int main() {
                                 dispense_timer_active = false;
                             }
                             current_state = STATE_WAITING;
-                            set_brightness(g_leds[0], 0);
-                            start_blink(g_leds[0]);
+                            set_brightness(leds[0], 0);
+                            start_blink(leds[0]);
                             dispensed_count = 0;
                         }
                     }
@@ -191,7 +189,7 @@ void gpio_callback(uint gpio, uint32_t event_mask) {
 bool blink_timer_callback(struct repeating_timer *t) {
     static bool led_state = false;
     led_state = !led_state;
-    set_brightness(g_leds[0], led_state ? WRAP_VALUE : 0);
+    set_brightness(leds[0], led_state ? WRAP_VALUE : 0);
     return true; // Keep repeating
 }
 
@@ -364,10 +362,37 @@ void step_motor(const uint *coil_pins, const int step, const uint8_t sequence[8]
     }
 }
 
+void align_motor(const uint *coil_pins, const uint8_t sequence[8][4]) {
+    bool prev_state = gpio_get(OPTO_PIN);
+    int safe_counter = steps_per_rev + 50;
+
+    while (safe_counter --> 0) {
+        step_motor(coil_pins, 1, sequence); // step forward
+        sleep_ms(STEP_DELAY_MS);
+        const bool sensor_state = gpio_get(OPTO_PIN);
+
+        if (prev_state && !sensor_state) {
+            break; // stop motor when edge is found
+        }
+        prev_state = sensor_state;
+    }
+    if (safe_counter <= 0) {
+        return;
+    }
+    run_motor_and_check_pill(coil_pins, sequence, ALIGNMENT_STEPS);
+}
+
 // Runs the motor for a specific number of steps
 void run_motor_and_check_pill(const uint *coil_pins, const uint8_t sequence[8][4], int steps_to_move) {
-    int direction = (steps_to_move > 0) ? 1 : -1;
-    int steps_abs = (steps_to_move > 0) ? steps_to_move : -steps_to_move;
+    int direction;
+    int steps_abs;
+    if (steps_to_move > 0) {
+        direction = 1;
+        steps_abs = steps_to_move;
+    } else {
+        direction = -1;
+        steps_abs = - steps_to_move;
+    }
 
     printf("Moving motor %d steps...\r\n", steps_to_move);
 
@@ -376,15 +401,23 @@ void run_motor_and_check_pill(const uint *coil_pins, const uint8_t sequence[8][4
         sleep_ms(STEP_DELAY_MS);
     }
     printf("Motor move complete.\r\n");
+
     //piezo remove blinking leds
     bool pill_detected = detect_drop();
     if(!pill_detected) {
         printf("No pill detected! Blinking LED 5 times.\r\n");
-        blink_n_times(g_leds[0], 5, 150); // 5 blinks
+        blink_n_times(leds[0], 5, 150); // 5 blinks
     } else {
         printf("Pill detected.\r\n");
     }
     dispensed_count++;
+}
+bool detect_drop() {
+    //How it should work: pills tak from global, and resets it after each usage case
+    bool pills = pill_dropped;
+    sleep_ms(100);
+    pill_dropped = false;
+    return pills;
 }
 
 // Blink n times
@@ -395,11 +428,4 @@ void blink_n_times(const uint led_pin, int n, int interval_ms) {
         set_brightness(led_pin, 0);
         sleep_ms(interval_ms);
     }
-}
-bool detect_drop() {
-    //How it should work: pills tak from global, and resets it after each usage case
-   bool pills = pill_dropped;
-    sleep_ms(100);
-    pill_dropped = false;
-    return pills;
 }
