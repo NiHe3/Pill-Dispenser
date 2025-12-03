@@ -21,6 +21,10 @@ static const uint coil_pins[] = {IN1, IN2, IN3, IN4};
 static const uint leds[] = {LED_D1};
 static int steps_per_rev = 4096; // Default, will be updated by calibration
 static int dispensed_count = 0;
+static int compartment_base_steps = 0;
+static int compartment_remainder = 0;
+static int compartment_index = 0; // 0..6 rotates to assign extra steps
+
 
 // Blink timer guards
 
@@ -355,7 +359,9 @@ int do_calibration(const uint *coil_pins, const uint8_t sequence[8][4], const in
 // Performs one half-step of the stepper motor
 void step_motor(const uint *coil_pins, const int step, const uint8_t sequence[8][4]) {
     static int phase = 0;
-    phase = (phase + step) & 7; // & 7 is a fast way to do (phase % 8)
+    int s = (step < 0) ? -1 : 1;
+
+    phase = (phase + s + 8) & 7; // & 7 is a fast way to do (phase % 8)
 
     for (int i = 0; i < INS_SIZE; i++) {
         gpio_put(coil_pins[i], sequence[phase][i]);
@@ -384,25 +390,18 @@ void align_motor(const uint *coil_pins, const uint8_t sequence[8][4]) {
 
 // Runs the motor for a specific number of steps
 void run_motor_and_check_pill(const uint *coil_pins, const uint8_t sequence[8][4], int steps_to_move) {
-    int direction;
-    int steps_abs;
-    if (steps_to_move > 0) {
-        direction = 1;
-        steps_abs = steps_to_move;
-    } else {
-        direction = -1;
-        steps_abs = - steps_to_move;
-    }
+    int direction = (steps_to_move >= 0) ? 1 : -1;
+    int base_steps = (steps_to_move >= 0) ? steps_to_move : -steps_to_move;
 
     printf("Moving motor %d steps...\r\n", steps_to_move);
 
-    for (int i = 0; i < steps_abs; i++) {
+    for (int i = 0; i < base_steps; i++) {
         step_motor(coil_pins, direction, sequence);
         sleep_ms(STEP_DELAY_MS);
     }
     printf("Motor move complete.\r\n");
 
-    //piezo remove blinking leds
+    // Pill detection
     bool pill_detected = detect_drop();
     if(!pill_detected) {
         printf("No pill detected! Blinking LED 5 times.\r\n");
@@ -414,10 +413,10 @@ void run_motor_and_check_pill(const uint *coil_pins, const uint8_t sequence[8][4
 }
 bool detect_drop() {
     //How it should work: pills tak from global, and resets it after each usage case
-    bool pills = pill_dropped;
-    sleep_ms(100);
+    bool detected = pill_dropped;
+    sleep_ms(20);
     pill_dropped = false;
-    return pills;
+    return detected;
 }
 
 // Blink n times
