@@ -1,6 +1,5 @@
 # Pill-Dispenser 
 # Practises for Pill dispenser project 
-(made by Niko, yell at him if something doesn't make sense) 
 
  GOLDEN RULE 
 	When a problem arrives be proactive and inform other group members if they cannot help you fix it talk to the Keijo. <br>
