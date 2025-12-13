@@ -300,7 +300,7 @@ void gpio_callback(uint gpio, uint32_t event_mask) {
     ev.data = 1; // 1 = pressed (we only care about falling edge)
 
     // Try to add to queue. If it fails (full), lose the event.
-    queue_try_add(&events, &ev);
+    queue_try_add_irq(&events, &ev);
 }
 
 // Timer callback for the "waiting" blink
@@ -601,3 +601,4 @@ void report_status(const char *event_message) {
     printf("LoRa report: %s\n", event_message);
     send_msg(event_message);
 }
+
