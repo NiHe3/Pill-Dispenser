@@ -141,7 +141,7 @@ int main() {
         while (queue_try_remove(&events, &event)) {
 
             // Only handle "press" events (data = 1)
-            if (event.data != EVENT_DISPENSE_STEP && event.data != 1) continue;
+            // if (event.data != EVENT_DISPENSE_STEP && event.data != 1) continue;
 
             // SW_2 event for logging, reading and erasing
             if (event.type == EVENT_SW_2 && event.data == 1) {
@@ -601,4 +601,5 @@ void report_status(const char *event_message) {
     printf("LoRa report: %s\n", event_message);
     send_msg(event_message);
 }
+
 
