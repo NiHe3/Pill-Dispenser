@@ -23,7 +23,7 @@ add_compile_options(-Wall
 
 # Tell CMake where to find the executable source file
 add_executable(${PROJECT_NAME}
-        V1_project.c
+        main.c
         main.h
 
 )
@@ -41,3 +41,4 @@ target_link_libraries(${PROJECT_NAME}
 # Disable usb output, enable uart output
 pico_enable_stdio_usb(${PROJECT_NAME} 0)
 pico_enable_stdio_uart(${PROJECT_NAME} 1)
+
