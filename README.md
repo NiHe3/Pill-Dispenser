@@ -19,13 +19,13 @@ The code relies on the following components and pin definitions:
 | Component | Pin Type/Function | Role |
 | :--- | :--- | :--- |
 | **Microcontroller** | Raspberry RP2040 | Core processing unit. |
-| **Stepper Motor** |  28BYJ-48 Four Coil Pins (IN1-IN4) | Drives the carousel/dispensing mechanism. |
+| **Stepper Motor** | `28BYJ-48`  Four Coil Pins (IN1-IN4) | Drives the carousel/dispensing mechanism. |
 | **Motor Driver** | ULN2003 | Interface between the Microcontroller and the stepper motor. |
 | **Optical Sensor** | `OPTO_PIN` | Used during calibration to detect a reference edge. |
 | **Piezo Sensor** | `PIEZO_PIN` | Used during dispensing to detect the physical drop of a pill (ISR driven). |
 | **LED** | `LED_D1` (PWM Capable) | Status indicator (Blinking: Waiting, Solid: Ready, Off: Dispensing/Busy). |
 | **Buttons** | `SW_0`, `SW_1`, `SW_2` | User input for starting, stopping, and accessing logs. |
-| **EEPROM** | AT24C256 I2C Interface: SDA 16, SCL 17 | Non-volatile storage for state, calibration data, and logs. |
+| **EEPROM** | `AT24C256` I2C Interface: SDA 16, SCL 17 | Non-volatile storage for state, calibration data, and logs. |
 
 ## 💻 Software Architecture
 
