@@ -1,6 +1,6 @@
 # 💊 Pill Dispenser - Embedded Systems Programming Project
 
-This project implements a state-machine-driven pill dispenser system using Raspberry RP2040. The system features motor control, optical/piezoelectric sensing for calibration and dispensing verification, non-volatile storage (EEPROM) for state recovery, and log management.
+This project implements a state-machine-driven pill dispenser system using Raspberry Pi RP2040 and is written entirely in C. The system features motor control, optical/piezoelectric sensing for calibration and dispensing verification, non-volatile storage (EEPROM) for state recovery, and log management.
 
 ## 🌟 Features
 
